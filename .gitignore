@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+*.png
+*/results/
+*/results-clean_with_sigmoid/
+
 # Distribution / packaging
 .Python
 build/
@@ -99,6 +103,8 @@ venv.bak/
 
 # mkdocs documentation
 /site
+
+*/data
 
 # mypy
 .mypy_cache/
