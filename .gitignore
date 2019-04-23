@@ -6,6 +6,8 @@ __pycache__/
 # C extensions
 *.so
 
+# project files that are taking too much space
+*.pth
 *.png
 */results/
 */results-clean_with_sigmoid/
