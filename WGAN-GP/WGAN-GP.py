@@ -11,25 +11,26 @@ import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
-
+import torch.autograd as autograd
+import numpy as np
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', required=True, help='cifar10 | lsun | mnist |imagenet | folder | lfw | fake')
-parser.add_argument('--dataroot', required=True, help='path to dataset')
+parser.add_argument('--dataset', default='mnist', help='cifar10 | lsun | mnist |imagenet | folder | lfw | fake')
+parser.add_argument('--dataroot', default='../data/', help='path to dataset')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
 parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
-parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
+parser.add_argument('--imageSize', type=int, default=28, help='the height / width of the input image to network')
 parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
-parser.add_argument('--ngf', type=int, default=64)
-parser.add_argument('--ndf', type=int, default=64)
+parser.add_argument('--ngf', type=int, default=28)
+parser.add_argument('--ndf', type=int, default=28)
 parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
-# parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
+parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
-parser.add_argument('--cuda', action='store_true', help='enables cuda')
+parser.add_argument('--cuda', default=True, action='store_true', help='enables cuda')
 parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
-parser.add_argument('--outf', default='.', help='folder to output images and model checkpoints')
+parser.add_argument('--outf', default='results', help='folder to output images and model checkpoints')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 
 opt = parser.parse_args()
@@ -51,47 +52,14 @@ cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-if opt.dataset in ['imagenet', 'folder', 'lfw']:
-    # folder dataset
-    dataset = dset.ImageFolder(root=opt.dataroot,
-                               transform=transforms.Compose([
-                                   transforms.Resize(opt.imageSize),
-                                   transforms.CenterCrop(opt.imageSize),
-                                   transforms.ToTensor(),
-                                   transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                               ]))
-    nc=3
-elif opt.dataset == 'lsun':
-    dataset = dset.LSUN(root=opt.dataroot, classes=['bedroom_train'],
+if opt.dataset == 'mnist':
+    dataset = dset.MNIST(root=opt.dataroot, download=True,
                         transform=transforms.Compose([
                             transforms.Resize(opt.imageSize),
-                            transforms.CenterCrop(opt.imageSize),
                             transforms.ToTensor(),
-                            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                            transforms.Normalize((0.5,), (0.5,)),
                         ]))
-    nc=3
-elif opt.dataset == 'cifar10':
-    dataset = dset.CIFAR10(root=opt.dataroot, download=True,
-                           transform=transforms.Compose([
-                               transforms.Resize(opt.imageSize),
-                               transforms.ToTensor(),
-                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                           ]))
-    nc=3
-
-elif opt.dataset == 'mnist':
-        dataset = dset.MNIST(root=opt.dataroot, download=True,
-                           transform=transforms.Compose([
-                               transforms.Resize(opt.imageSize),
-                               transforms.ToTensor(),
-                               transforms.Normalize((0.5,), (0.5,)),
-                           ]))
-        nc=1
-
-elif opt.dataset == 'fake':
-    dataset = dset.FakeData(image_size=(3, opt.imageSize, opt.imageSize),
-                            transform=transforms.ToTensor())
-    nc=3
+    nc=1
 
 assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
@@ -128,24 +96,27 @@ class Generator(nn.Module):
             nn.BatchNorm2d(ngf * 4),
             nn.ReLU(True),
             # state size. (ngf*4) x 8 x 8
-            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d(ngf * 4, ngf * 2, 2, 2, 1, bias=False),
             nn.BatchNorm2d(ngf * 2),
             nn.ReLU(True),
             # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 2,     ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf),
-            nn.ReLU(True),
-            # state size. (ngf) x 32 x 32
-            nn.ConvTranspose2d(    ngf,      nc, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d(in_channels=ngf * 2, out_channels=1, 
+                kernel_size=4, stride=2, padding=1, bias=False),
+            # nn.BatchNorm2d(ngf),
+            # nn.ReLU(True),
+            # # state size. (ngf) x 32 x 32
+            # nn.ConvTranspose2d(    ngf,      nc, 4, 2, 1, bias=False),
             nn.Tanh()
             # state size. (nc) x 64 x 64
         )
 
     def forward(self, input):
+        # print('input shape', input.shape)
         if input.is_cuda and self.ngpu > 1:
             output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
         else:
             output = self.main(input)
+        # print('input shape', output.shape)
         return output
 
 
@@ -160,10 +131,12 @@ class Discriminator(nn.Module):
     def __init__(self, ngpu):
         super(Discriminator, self).__init__()
         self.ngpu = ngpu
+        # input = (28, 28)
+        ndf = 28
         self.main = nn.Sequential(
             # input is (nc) x 64 x 64
-            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, iD_fakenplace=True),
+            nn.Conv2d(1, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf) x 32 x 32
             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 2),
@@ -173,20 +146,17 @@ class Discriminator(nn.Module):
             nn.BatchNorm2d(ndf * 4),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*4) x 8 x 8
-            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*8) x 4 x 4
-            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
+            nn.Conv2d(ndf * 4, 1, 4, 2, 1, bias=False)
         )
 
     def forward(self, input):
+        # import ipdb; ipdb.set_trace()
+        # print('------------')
         if input.is_cuda and self.ngpu > 1:
             output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
         else:
             output = self.main(input)
-#         print('G SHAPE', output.shape)
+
         return output.view(-1, 1).squeeze(1)
 
 
@@ -196,7 +166,6 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-criterion = nn.BCELoss()
 
 fixed_noise = torch.randn(opt.batchSize, nz, 1, 1, device=device)
 real_label = 1
@@ -206,14 +175,28 @@ fake_label = 0
 # clamp_param = 0.01
 
 ### PARAMS SPECIFIC FOR WGAN-GP (FROM PAPER):
-# lambda: (penalty weight)
-# ncritic = 5
-# lr = 0.0001
-# Beta1=0, Beta2=0.9
 gp_lapmbda = 10
 ncritic = 5
 lr = 0.0001
-Beta1, Beta2 = 0, 0.9
+Beta1, Beta2 = 0.5, 0.999
+
+def calc_gradient_penalty(netD, real_data, fake_data, batch_size):
+    #print real_data.size()
+    alpha = torch.randn(real_data.size(0), 1, 1, 1).cuda()
+    # Get random interpolation between real and fake samples
+    interpolates = (alpha * real_data + ((1 - alpha) * fake_data)).requires_grad_(True)
+
+    
+    interpolates = interpolates.cuda()
+
+    disc_interpolates = netD(interpolates)
+
+    gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates,
+                              grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
+                              create_graph=True, retain_graph=True, only_inputs=True)[0]
+
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lapmbda
+    return gradient_penalty
 
 
 
@@ -227,69 +210,43 @@ for epoch in range(opt.niter):
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
         ###########################
         netD.zero_grad()
+        # print('DATA SHAPE', len(data))
+        # Firste element [0] is input, [1] is label
         real_cpu = data[0].to(device)
         batch_size = real_cpu.size(0)
-        label = torch.full((batch_size,), real_label, device=device)
-        
-        for _ in range(ncritic):
-            # train with real
-            # Batch of real samples
-            output = netD(real_cpu)
-            errD_real = torch.mean(output)
-#             errD_real = criterion(output, label)
-            errD_real.backward()
-            D_x = output.mean().item()
 
-            # train with fake
-            # prior samples
-            noise = torch.randn(batch_size, nz, 1, 1, device=device)
-            
-            # g(z)
+        # train with real
+        output = netD(real_cpu)
+        errD_real = torch.mean(output)
+
+        noise = torch.randn(batch_size, nz, 1, 1, device=device)
+        fake = netG(noise)
+        output = netD(fake.detach())
+        errD_fake = torch.mean(output)
+
+        penalty = calc_gradient_penalty(netD, real_cpu, fake, batch_size)
+        # penalty.backward()
+        errD = errD_fake - errD_real + penalty
+        # print('errfake', errD_fake, ' errReal', errD_real, ' penalty: ', penalty)
+        errD.backward()
+        print(errD)
+        optimizerD.step()
+
+        if i % 5 == 0:
+            ############################
+            # (2) Update G network: maximize log(D(G(z)))
+            ###########################
+            netG.zero_grad()
+            # noise = torch.randn(batch_size, nz, 1, 1, device=device)
             fake = netG(noise)
-            print('-----')
-#             label.fill_(fake_label)
-            output = netD(fake.detach())
-            errD_fake = torch.mean(output)
-            errD_fake.backward()
-            D_G_z1 = output.mean().item()
-            
-            # calculate epsilon
-            epsilon = torch.randn(batch_size, 1)
-            epsilon = epsilon.expand(output.size())
-            epsilon = epsilon.to(device)
-            
-            print(output.shape)
-            print(fake.shape)
-            # get the xhat
-            data_hat = epsilon*output + (1 - epsilon)*fake
-            data_hat_forgrad = autograd.Variable(data_hat, requires_grad=True)
-            D_w = netD(data_hat_forgrad)
-            gradients_wrt_inputs = autograd.grad(outputs=D_w, inputs=data_hat_forgrad,
-                grad_outputs=torch.ones(D_w = netD(data_hat_forgrad).size()),
-                  create_graph=True, retain_graph=True, only_inputs=True)[0]
-            gradient_penalty = gp_lapmbda * torch.power((gradients.norm(2, dim=1) - 1), 2).mean()
-            
-            errD = errD_fake - errD_real + gradient_penalty
-            optimizerD.step()
-#             # clamp weights
-#             for weight in netD.parameters():
-#                 weight.data.clamp_(-clamp_param, clamp_param)
-            
-        ############################
-        # (2) Update G network: maximize log(D(G(z)))
-        ###########################
-        netG.zero_grad()
-        label.fill_(real_label)  # fake labels are real for generator cost
-        errG = - torch.mean(netD(fake))
-#         errG = criterion(output, label)
-        errG.backward()
-        D_G_z2 = output.mean().item()
-        optimizerG.step()
+            errG = - torch.mean(netD(fake))
+            errG.backward()
+            optimizerG.step()
 
-        print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
-              % (epoch, opt.niter, i, len(dataloader),
-                 errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
-        if i % 100 == 0:
+            print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f'
+                  % (epoch, opt.niter, i, len(dataloader),
+                     errD.item(), errG.item()))#D_x, D_G_z1, D_G_z2))
+        if i % 50 == 0:
             vutils.save_image(real_cpu,
                     '%s/real_samples.png' % opt.outf,
                     normalize=True)

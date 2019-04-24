@@ -11,6 +11,7 @@ __pycache__/
 *.png
 */results/
 */results-clean_with_sigmoid/
+*/mnist/
 
 # Distribution / packaging
 .Python
