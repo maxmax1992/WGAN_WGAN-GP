@@ -177,8 +177,8 @@ fake_label = 0
 ### PARAMS SPECIFIC FOR WGAN-GP (FROM PAPER):
 gp_lapmbda = 10
 ncritic = 5
-lr = 0.0001
-Beta1, Beta2 = 0.5, 0.999
+lr = 0.0002
+Beta1, Beta2 = 0, 0.9
 
 def calc_gradient_penalty(netD, real_data, fake_data, batch_size):
     #print real_data.size()
@@ -229,7 +229,7 @@ for epoch in range(opt.niter):
         errD = errD_fake - errD_real + penalty
         # print('errfake', errD_fake, ' errReal', errD_real, ' penalty: ', penalty)
         errD.backward()
-        print(errD)
+        # print(errD)
         optimizerD.step()
 
         if i % 5 == 0:
