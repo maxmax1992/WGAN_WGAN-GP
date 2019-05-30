@@ -119,4 +119,3 @@ venv.bak/
 # ignore toy dataset
 mnist
 yolo-v3
-*.pth
