@@ -111,4 +111,12 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+*.jpg
+*.png
+.*/data/*
 *.pt
+# ignore toy dataset
+mnist
+yolo-v3
+*.pth
